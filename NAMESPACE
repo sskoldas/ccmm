@@ -1,0 +1,4 @@
+import(stats)
+importFrom(MASS, mvrnorm)
+importFrom(utils, combn)
+export(ccmm, ccmm.sensitivity, ccmm.sa, tide.ci.zero.rho)

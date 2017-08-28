@@ -1,0 +1,10 @@
+c0baa3f83510922b1c8b00408a832c96 *DESCRIPTION
+1782c2ef4597797ad8357b7a93472a47 *NAMESPACE
+fe8cbe272f035e3a1d1d8ad96553e629 *R/ccmm.R
+c98bb1cba2630160b18562830cd3c982 *data/ccmm_test_data.RData
+8b6aa31b469f9cf18008d0a85ce9b4d3 *man/ccmm-package.Rd
+50d41f5ebf37d8cd45ee3367987d8b54 *man/ccmm.Rd
+fceb77ef1a02cdd72b97231ffe2176c8 *man/ccmm.sa.Rd
+b0f33322a8d5d78e3e63a88c83ed99fb *man/ccmm.sensitivity.Rd
+ab84dd6b8c73194643fb4a6143134942 *man/ccmm_test_data.Rd
+6b9e19b039515e754ef2cccba9acc8f3 *man/tide.ci.zero.rho.Rd
