@@ -9,6 +9,8 @@ ccmm <- function(y, M, tr, x=NULL, w=NULL, method.est.cov = "bootstrap", n.boot=
     stop('Parameter (method.est.cov) must be either "bootstrap" or "normal.approx".', call.=FALSE);
   k <- ncol(M);
   rslt.A <- est.comp.param.boot(M, tr, x, w, method.est.cov, n.boot);
+  if(is.null(rslt.A)) stop("Estimation of compositional parameters failed.", call.=FALSE)
+  
   rslt.B <- est.debias.B(y, M, tr, x, tol, max.iter);
   
   if(method.est.cov=="bootstrap"){
@@ -17,8 +19,15 @@ ccmm <- function(y, M, tr, x=NULL, w=NULL, method.est.cov = "bootstrap", n.boot=
     DE.CI <- quantile(boot.debias.B[,k+1], probs=c(sig.level/2, 1-sig.level/2), names=TRUE);
     p.DE <- 2 * min(mean(boot.debias.B[,k+1] <= 0), mean(boot.debias.B[,k+1] >= 0))
     
-    boot.IDEs <- log(k*rslt.A) * boot.debias.B[,1:k];
-    IDEs <- colMeans(log(k*rslt.A)) * colMeans(boot.debias.B[,1:k]);
+    rslt.A[rslt.A <= 0] <- 1e-8
+    log_k_rslt_A <- log(k * rslt.A)
+    # Check for NaNs and Infs
+    if(any(is.na(log_k_rslt_A)) || any(is.infinite(log_k_rslt_A))){
+      stop("Non-positive values encountered in rslt.A after adjustment. Cannot compute logarithm.")
+    }
+    
+    boot.IDEs <- log_k_rslt_A * boot.debias.B[,1:k];
+    IDEs <- colMeans(log_k_rslt_A) * colMeans(boot.debias.B[,1:k]);
     names(IDEs) <- paste("C", 1:k, sep="");
     IDE.CIs <- apply(boot.IDEs, 2, function(x) quantile(x, probs=c(sig.level/2, 1-sig.level/2), names=TRUE));
     colnames(IDE.CIs) <- paste("C", 1:k, sep="");
@@ -38,6 +47,11 @@ ccmm <- function(y, M, tr, x=NULL, w=NULL, method.est.cov = "bootstrap", n.boot=
     Var.DE <- rslt.B$cov.debias.B[k+1,k+1];
     z.DE <- DE / sqrt(Var.DE)
     p.DE <- 2 * (1 - pnorm(abs(z.DE)))
+    
+    # Ensure rslt.A$E.ln.kA is finite
+    if(any(is.na(rslt.A$E.ln.kA)) || any(is.infinite(rslt.A$E.ln.kA))){
+      stop("Invalid values encountered in rslt.A$E.ln.kA. Cannot proceed with calculations.")
+    }
     
     IDEs <- rslt.A$E.ln.kA * rslt.B$debias.B[1:k];
     names(IDEs) <- paste("C", 1:k, sep="");
@@ -114,7 +128,27 @@ est.comp.param <- function(M, tr, x, w){
   }
   
   mat_Ds[upper.tri(mat_Ds)] <- t(mat_Ds)[upper.tri(mat_Ds)];
-  ests.k_minus_1 <- matrix(exp(solve(mat_Ds, vec_ms)), nrow=(k-1));
+  
+  # Check if mat_Ds is singular
+  if (det(mat_Ds) == 0 || is.nan(det(mat_Ds))) {
+    warning("Matrix mat_Ds is singular or nearly singular. Adding small value to diagonal for regularization.")
+    mat_Ds <- mat_Ds + diag(1e-6, nrow(mat_Ds))
+  }
+  
+  # Solve the system
+  solution <- try(solve(mat_Ds, vec_ms), silent = TRUE)
+  if(inherits(solution, "try-error")){
+    warning("Could not solve mat_Ds. Returning NULL.")
+    return(NULL)
+  }
+  
+  ests.k_minus_1 <- matrix(exp(solution), nrow=(k-1));
+  
+  # Handle Inf or NaN values
+  if(any(is.infinite(ests.k_minus_1)) || any(is.nan(ests.k_minus_1))){
+    warning("Invalid values in ests.k_minus_1. Returning NULL.")
+    return(NULL)
+  }
   ests_k <- 1/(colSums(ests.k_minus_1)+1);
   ests.k_minus_1 <- ests.k_minus_1 * tcrossprod(rep(1,k-1), ests_k);
   comp.param <- rbind(ests.k_minus_1, ests_k);
@@ -136,29 +170,34 @@ est.comp.param.boot <- function(M, tr, x, w, method.est.cov, n.boot){
     if(!is.vector(w)) w <- as.vector(w);
   }
   if(!is.vector(tr)) tr <- as.vector(tr);
-  if(is.null(x)){
-    boot.A <- matrix(0, nrow=n.boot, ncol=k);
-    for(i in 1:n.boot){
-      indx <- sample(1:n, n, replace=TRUE);
-      boot.M <- M[indx,];
-      boot.tr <- tr[indx];
+  
+  valid_boot <- 0
+  max_iter <- n.boot * 2  # Allow up to double the required iterations
+  boot.A <- matrix(0, nrow=n.boot, ncol=k);
+  iter <- 1
+  while(valid_boot < n.boot && iter <= max_iter){
+    indx <- sample(1:n, n, replace=TRUE);
+    boot.M <- M[indx,];
+    boot.tr <- tr[indx];
+    if(is.null(x)){
       boot.params <- est.comp.param(boot.M, boot.tr, x, w);
-      boot.A[i,] <- boot.params[,"a"];
-    }
-  } else{
-    if(!is.matrix(x)) x <- as.matrix(x);
-    boot.A <- matrix(0, nrow=n.boot, ncol=k);
-    for(i in 1:n.boot){
-      indx <- sample(1:n, n, replace=TRUE);
-      boot.M <- M[indx,];
-      boot.tr <- tr[indx];
+    } else{
       boot.x <- x[indx,];
       if(!is.matrix(boot.x)) boot.x <- as.matrix(boot.x);
       boot.params <- est.comp.param(boot.M, boot.tr, boot.x, w);
-      boot.A[i,] <- boot.params[,"a"];
     }
+    if(!is.null(boot.params)){
+      boot.A[valid_boot + 1,] <- boot.params[,"a"];
+      valid_boot <- valid_boot + 1
+    }
+    iter <- iter + 1
   }
-  if(method.est.cov=="bootstrap"){ ### Return just bootstrap samples of parameter A
+  if(valid_boot < n.boot){
+    warning("Not enough valid bootstrap samples were obtained.")
+    boot.A <- boot.A[1:valid_boot, , drop=FALSE]
+  }
+  
+  if(method.est.cov=="bootstrap"){ ### Return bootstrap samples of parameter A
     return(boot.A);
   } else{ ### Return E(log(kA)) and Var(log(kA))
     boot.ln.kA <- log(k*boot.A);
