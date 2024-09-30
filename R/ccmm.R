@@ -330,37 +330,40 @@ est.debias.B <- function(y, M, tr, x, tol, max.iter){
   }
   n.vrs <- k + n.trx;
   contr <- c(rep(1/sqrt(k), k), rep(0, n.trx));
-  Z.til <- Z %*% (diag(n.vrs)-tcrossprod(contr));
+  Z.til <- Z %*% (diag(n.vrs) - tcrossprod(contr));
   est.param <- ccmm_slr(y, Z.til, contr, tol, max.iter);
   cent.y <- scale(y, scale=FALSE);
   cent.Z.til <- scale(Z.til, scale=FALSE);
-  gam0 <- est.param$lambda0/3; Sig <- crossprod(cent.Z.til)/n;
+  gam0 <- est.param$lambda0 / 3; 
+  Sig <- crossprod(cent.Z.til) / n;
   Sig2 <- Sig - diag(diag(Sig));
   Q <- diag(n.vrs) - tcrossprod(contr);
   M.til <- matrix(0, n.vrs, n.vrs);
   for(i in 1:n.vrs){
-    gam <- gam0/2;
-    while(gam<0.5){
-      gam <- gam*2;
-      mi <- rep(1,n.vrs);
-      mi0 <- rep(0,n.vrs);
+    gam <- gam0 / 2;
+    while(gam < 0.5){
+      gam <- gam * 2;
+      mi <- rep(1, n.vrs);
+      mi0 <- rep(0, n.vrs);
       iter <- 1;
-      while(sum(abs(mi-mi0))>tol & iter<max.iter){
+      while(sum(abs(mi - mi0)) > tol & iter < max.iter){
         mi0 <- mi;
         for(j in 1:n.vrs){
-          v <- -Sig2[j,]%*%mi+Q[j,i];
-          mi[j] <- sign(v)*max(0, abs(v)-gam)/Sig[j,j];
+          v <- -Sig2[j, ] %*% mi + Q[j, i];
+          mi[j] <- sign(v) * max(0, abs(v) - gam) / Sig[j, j];
         }
         iter <- iter + 1;
       }
-      if(iter<max.iter) break;
+      if(iter < max.iter) break;
     }
-    M.til[i,] <- mi;
+    M.til[i, ] <- mi;
   }
-  M.til <- Q%*%M.til;
-  debias.B <- est.param$beta + M.til%*%t(cent.Z.til)%*%(cent.y-cent.Z.til%*%est.param$beta-(est.param$intercept*rep(1,n)))/n;
-  cov.debias.B <- est.param$sigma^2*M.til%*%Sig%*%t(M.til)/n;
-  return(list(debias.B=t(debias.B), cov.debias.B=cov.debias.B));
+  M.til <- Q %*% M.til;
+  # Modify this line to avoid the warning
+  intercept_numeric <- as.numeric(est.param$intercept)
+  debias.B <- est.param$beta + M.til %*% t(cent.Z.til) %*% (cent.y - cent.Z.til %*% est.param$beta - intercept_numeric) / n;
+  cov.debias.B <- est.param$sigma^2 * M.til %*% Sig %*% t(M.til) / n;
+  return(list(debias.B = t(debias.B), cov.debias.B = cov.debias.B));
 }
 
 tvar <- function(Ea, Eb, VCa, VCb){
