@@ -1,3 +1,8 @@
+# For the bootstrap method, p-values are calculated based on the proportion of bootstrap samples that are less than or greater than zero, providing a two-sided p-value.
+# For the normal approximation method, p-values are calculated using the standard normal distribution based on the z-scores of the estimates.
+#
+#
+
 ccmm <- function(y, M, tr, x=NULL, w=NULL, method.est.cov = "bootstrap", n.boot=2000, sig.level=0.05, tol=1e-6, max.iter=5000){
   if(!is.matrix(M)) stop("M must be in matrix format!!!", call.=FALSE);
   if(method.est.cov!="bootstrap" & method.est.cov!="normal")
@@ -5,22 +10,35 @@ ccmm <- function(y, M, tr, x=NULL, w=NULL, method.est.cov = "bootstrap", n.boot=
   k <- ncol(M);
   rslt.A <- est.comp.param.boot(M, tr, x, w, method.est.cov, n.boot);
   rslt.B <- est.debias.B(y, M, tr, x, tol, max.iter);
+  
   if(method.est.cov=="bootstrap"){
     boot.debias.B <- mvrnorm(n=n.boot,mu=rslt.B$debias.B, Sigma=rslt.B$cov.debias.B);
     DE <- mean(boot.debias.B[,k+1]);
     DE.CI <- quantile(boot.debias.B[,k+1], probs=c(sig.level/2, 1-sig.level/2), names=TRUE);
+    p.DE <- 2 * min(mean(boot.debias.B[,k+1] <= 0), mean(boot.debias.B[,k+1] >= 0))
+    
     boot.IDEs <- log(k*rslt.A) * boot.debias.B[,1:k];
     IDEs <- colMeans(log(k*rslt.A)) * colMeans(boot.debias.B[,1:k]);
     names(IDEs) <- paste("C", 1:k, sep="");
     IDE.CIs <- apply(boot.IDEs, 2, function(x) quantile(x, probs=c(sig.level/2, 1-sig.level/2), names=TRUE));
     colnames(IDE.CIs) <- paste("C", 1:k, sep="");
+    IDE.pvalues <- sapply(1:k, function(j) 2 * min(mean(boot.IDEs[,j] <= 0), mean(boot.IDEs[,j] >= 0)))
+    names(IDE.pvalues) <- paste("C", 1:k, sep = "")
+    
     TIDE <- sum(IDEs);
     boot.TIDE <- rowSums(log(rslt.A) * boot.debias.B[,1:k]);
     TIDE.CI <- quantile(boot.TIDE, probs=c(sig.level/2, 1-sig.level/2), names=TRUE);
-    return(list(DE=DE, DE.CI=DE.CI, TIDE=TIDE, TIDE.CI=TIDE.CI, IDEs=IDEs, IDE.CIs=IDE.CIs));
+    p.TIDE <- 2 * min(mean(boot.TIDE <= 0), mean(boot.TIDE >= 0))
+    
+    return(list(DE=DE, DE.CI=DE.CI, DE.pvalue = p.DE, 
+                TIDE=TIDE, TIDE.CI=TIDE.CI, TIDE.pvalue = p.TIDE, 
+                IDEs=IDEs, IDE.CIs=IDE.CIs, IDE.pvalues = IDE.pvalues));
   } else{
     DE <- rslt.B$debias.B[k+1];
     Var.DE <- rslt.B$cov.debias.B[k+1,k+1];
+    z.DE <- DE / sqrt(Var.DE)
+    p.DE <- 2 * (1 - pnorm(abs(z.DE)))
+    
     IDEs <- rslt.A$E.ln.kA * rslt.B$debias.B[1:k];
     names(IDEs) <- paste("C", 1:k, sep="");
     Var.IDEs <- numeric(k);
@@ -28,9 +46,18 @@ ccmm <- function(y, M, tr, x=NULL, w=NULL, method.est.cov = "bootstrap", n.boot=
       Var.IDEs[i] <- idvar_j(rslt.A$E.ln.kA[i], rslt.B$debias.B[i], rslt.A$Var.ln.kA[i,i], rslt.B$cov.debias.B[i,i]);
     }
     names(Var.IDEs) <- paste("C", 1:k, sep="");
+    IDE.zscores <- IDEs / sqrt(Var.IDEs)
+    IDE.pvalues <- 2 * (1 - pnorm(abs(IDE.zscores)))
+    names(IDE.pvalues) <- paste("C", 1:k, sep = "")
+    
     TIDE <- sum(IDEs);
     Var.TIDE <- tvar(rslt.A$E.ln.kA, rslt.B$debias.B[1:k], rslt.A$Var.ln.kA, rslt.B$cov.debias.B[1:k,1:k]);
-    return(list(DE=DE, Var.DE=Var.DE, TIDE=TIDE, Var.TIDE=Var.TIDE, IDEs=IDEs, Var.IDEs=Var.IDEs));
+    z.TIDE <- TIDE / sqrt(Var.TIDE)
+    p.TIDE <- 2 * (1 - pnorm(abs(z.TIDE)))
+    
+    return(list(DE=DE, Var.DE=Var.DE, DE.pvalue = p.DE, 
+                TIDE=TIDE, Var.TIDE=Var.TIDE, TIDE.pvalue = p.TIDE, 
+                IDEs=IDEs, Var.IDEs=Var.IDEs, IDE.pvalues = IDE.pvalues));
   }
 }
 
